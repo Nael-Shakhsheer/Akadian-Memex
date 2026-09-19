@@ -231,17 +231,36 @@ const blobToBase64 = blob => new Promise((res, rej) => {
 /* ---------- Gemini ---------- */
 class ApiError extends Error { constructor(status, message) { super(message); this.status = status; } }
 
-async function gemini(body) {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(settings.model)}:generateContent`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': settings.apiKey }, body: JSON.stringify(body) }
-  );
-  if (!res.ok) {
-    let msg = '';
-    try { msg = (await res.json()).error?.message || ''; } catch { /* not json */ }
-    throw new ApiError(res.status, friendlyApiError(res.status, msg));
+const API = 'https://generativelanguage.googleapis.com/v1beta';
+const FREE_GROUNDING_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];   // free-tier models that allow Google Search
+
+// Models this key can call generateContent on, as bare IDs (e.g. "gemini-2.5-flash").
+async function listModels() {
+  const res = await fetch(`${API}/models?pageSize=200`, { headers: { 'x-goog-api-key': settings.apiKey } });
+  if (!res.ok) throw new ApiError(res.status, '');
+  const data = await res.json();
+  return (data.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace(/^models\//, ''));
+}
+
+async function gemini(body, retried = false) {
+  const res = await fetch(`${API}/models/${encodeURIComponent(settings.model)}:generateContent`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': settings.apiKey }, body: JSON.stringify(body) });
+  if (res.ok) return res.json();
+
+  let msg = '';
+  try { msg = (await res.json()).error?.message || ''; } catch { /* not json */ }
+  if (res.status === 404 && !retried) {
+    // The configured model doesn't exist for this key: ask Google what does, and recover on our own.
+    let list = null;
+    try { list = await listModels(); } catch { /* fall through to the plain error */ }
+    if (list) {
+      const alt = FREE_GROUNDING_MODELS.find(m => m !== settings.model && list.includes(m));
+      if (alt) { settings.model = alt; saveSettings(); return gemini(body, true); }
+      const names = list.filter(m => /^gemini/.test(m)).slice(0, 14).join(', ') || 'none found';
+      throw new ApiError(404, `“${settings.model}” isn’t available to your key${msg ? ` (Google: ${msg.slice(0, 160)})` : ''}. Models your key can use: ${names}.`);
+    }
   }
-  return res.json();
+  throw new ApiError(res.status, friendlyApiError(res.status, msg));
 }
 function friendlyApiError(status, msg) {
   if (status === 400 && /api key/i.test(msg)) return 'Google rejected the API key. Check it in Settings.';
@@ -700,12 +719,12 @@ async function testKey(out) {
   try {
     // Same path research uses (search grounding on), so a model/quota problem shows up here, not later.
     await gemini({ contents: [{ role: 'user', parts: [{ text: 'Reply with the single word OK.' }] }], tools: [{ google_search: {} }] });
-    say('Connected ✓', 'ok'); return true;
+    say('Connected ✓ (' + settings.model + ')', 'ok'); return true;
   } catch (e) {
     say(e instanceof TypeError ? 'Network error. Are you online?' : e.message, 'bad'); return false;
   }
 }
-$('#testKey').addEventListener('click', () => { readSettingsForm(); testKey($('#testOut')); });
+$('#testKey').addEventListener('click', async () => { readSettingsForm(); await testKey($('#testOut')); $('#model').value = settings.model; });
 $('#exportBtn').addEventListener('click', () => {
   const data = ideas.map(({ audio, ...rest }) => rest);
   const a = document.createElement('a');
