@@ -235,9 +235,11 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const FREE_GROUNDING_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];   // free-tier models that allow Google Search
 
 // Models this key can call generateContent on, as bare IDs (e.g. "gemini-2.5-flash").
+const APP_VERSION = '5';
+async function googleMessage(res) { try { return (await res.json()).error?.message || ''; } catch { return ''; } }
 async function listModels() {
   const res = await fetch(`${API}/models?pageSize=200`, { headers: { 'x-goog-api-key': settings.apiKey } });
-  if (!res.ok) throw new ApiError(res.status, '');
+  if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}${(m => m ? ': ' + m.slice(0, 200) : '')(await googleMessage(res))}`);
   const data = await res.json();
   return (data.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace(/^models\//, ''));
 }
@@ -251,8 +253,9 @@ async function gemini(body, retried = false) {
   try { msg = (await res.json()).error?.message || ''; } catch { /* not json */ }
   if (res.status === 404 && !retried) {
     // The configured model doesn't exist for this key: ask Google what does, and recover on our own.
-    let list = null;
-    try { list = await listModels(); } catch { /* fall through to the plain error */ }
+    let list = null, listErr = '';
+    try { list = await listModels(); } catch (e) { listErr = e.message; }
+    if (!list) throw new ApiError(404, `Model “${settings.model}” was not found (Google: ${msg.slice(0, 200) || 'no details'}). Listing your key’s models also failed (${listErr}). Open Settings → “Show models my key can use”.`);
     if (list) {
       const alt = FREE_GROUNDING_MODELS.find(m => m !== settings.model && list.includes(m));
       if (alt) { settings.model = alt; saveSettings(); return gemini(body, true); }
@@ -724,6 +727,20 @@ async function testKey(out) {
     say(e instanceof TypeError ? 'Network error. Are you online?' : e.message, 'bad'); return false;
   }
 }
+$('#ver').textContent = 'Ember v' + APP_VERSION;
+$('#listModels').addEventListener('click', async () => {
+  readSettingsForm();
+  const out = $('#modelsOut'); out.hidden = false;
+  if (!settings.apiKey) { out.textContent = 'Paste a key first.'; return; }
+  out.textContent = 'Asking Google…';
+  try {
+    const list = await listModels();
+    const gem = list.filter(m => /^gemini/.test(m));
+    out.textContent = gem.length ? 'Models your key can use:\n' + gem.join('\n') : 'Google returned no Gemini models for this key.' + (list.length ? '\nOther: ' + list.slice(0, 10).join(', ') : '');
+  } catch (e) {
+    out.textContent = e instanceof TypeError ? 'Network error. Are you online?' : 'Google said ' + (e.message || e.status);
+  }
+});
 $('#testKey').addEventListener('click', async () => { readSettingsForm(); await testKey($('#testOut')); $('#model').value = settings.model; });
 $('#exportBtn').addEventListener('click', () => {
   const data = ideas.map(({ audio, ...rest }) => rest);

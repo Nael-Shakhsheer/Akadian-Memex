@@ -256,6 +256,9 @@ dialog hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0 4px; }
 .wz .dlg-foot { margin-top: 6px; }
 .wz #wzBack[hidden] { display: block !important; visibility: hidden; }
 
+.models-out { margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--ink) 6%, transparent); font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto; }
+.ver { text-align: center; color: var(--muted); font-size: 12px; margin-top: 12px; }
+
 .toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; max-width: min(420px, calc(100vw - 32px)); opacity: 0; pointer-events: none; transition: .2s; z-index: 60; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
