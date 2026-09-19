@@ -235,7 +235,7 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const FREE_GROUNDING_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];   // free-tier models that allow Google Search
 
 // Models this key can call generateContent on, as bare IDs (e.g. "gemini-2.5-flash").
-const APP_VERSION = '5';
+const APP_VERSION = '6';
 async function googleMessage(res) { try { return (await res.json()).error?.message || ''; } catch { return ''; } }
 async function listModels() {
   const res = await fetch(`${API}/models?pageSize=200`, { headers: { 'x-goog-api-key': settings.apiKey } });
@@ -251,19 +251,20 @@ async function gemini(body, retried = false) {
 
   let msg = '';
   try { msg = (await res.json()).error?.message || ''; } catch { /* not json */ }
+  const raw = ` [HTTP ${res.status}${msg ? ' · Google: ' + msg.slice(0, 240) : ''}]`;   // always show Google's own words
   if (res.status === 404 && !retried) {
-    // The configured model doesn't exist for this key: ask Google what does, and recover on our own.
-    let list = null, listErr = '';
-    try { list = await listModels(); } catch (e) { listErr = e.message; }
-    if (!list) throw new ApiError(404, `Model “${settings.model}” was not found (Google: ${msg.slice(0, 200) || 'no details'}). Listing your key’s models also failed (${listErr}). Open Settings → “Show models my key can use”.`);
-    if (list) {
-      const alt = FREE_GROUNDING_MODELS.find(m => m !== settings.model && list.includes(m));
+    // Is the configured model really missing for this key? Ask Google what exists, and recover if so.
+    let list = null;
+    try { list = await listModels(); } catch { /* can't tell; report the raw error below */ }
+    if (list && !list.includes(settings.model)) {
+      const alt = FREE_GROUNDING_MODELS.find(m => list.includes(m));
       if (alt) { settings.model = alt; saveSettings(); return gemini(body, true); }
       const names = list.filter(m => /^gemini/.test(m)).slice(0, 14).join(', ') || 'none found';
-      throw new ApiError(404, `“${settings.model}” isn’t available to your key${msg ? ` (Google: ${msg.slice(0, 160)})` : ''}. Models your key can use: ${names}.`);
+      throw new ApiError(404, `“${settings.model}” isn’t available to your key. Models your key can use: ${names}.${raw}`);
     }
+    if (list) throw new ApiError(404, `The model “${settings.model}” exists for your key, but Google rejected this request as not found.${raw}`);
   }
-  throw new ApiError(res.status, friendlyApiError(res.status, msg));
+  throw new ApiError(res.status, friendlyApiError(res.status, msg) + (res.status === 429 ? '' : raw));
 }
 function friendlyApiError(status, msg) {
   if (status === 400 && /api key/i.test(msg)) return 'Google rejected the API key. Check it in Settings.';
