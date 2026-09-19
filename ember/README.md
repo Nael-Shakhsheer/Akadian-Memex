@@ -25,5 +25,5 @@ Each user brings their own free Gemini API key ([aistudio.google.com/apikey](htt
 
 - Keep the app open while a brief generates (typically 30–90 s). iOS may pause it in the background; it resumes when you come back.
 - iOS can clear website data for sites you haven't opened in a while. Installed home-screen apps are exempt, but use **Settings → Export backup** occasionally.
-- The default model is `gemini-3.6-flash`; change it in Settings if Google retires it. It must support Google Search grounding.
+- The default model is `gemini-2.5-flash`. Google Search grounding (the source-backed research) is free only on 2.5 Flash / 2.5 Flash-Lite; the 3.x models need billing enabled on your key. Change it in Settings if Google retires it.
 - Briefs are AI-generated starting points. Check the sources before relying on them.

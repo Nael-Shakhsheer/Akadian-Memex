@@ -39,11 +39,17 @@ function toast(msg, ms = 3200) {
 }
 
 /* ---------- settings (localStorage, best effort) ---------- */
-const DEFAULT_MODEL = 'gemini-3.6-flash';
+// Google Search grounding (how Ember finds and cites sources) is only free on Gemini 2.5 Flash / Flash-Lite;
+// the 3.x models need a billing-enabled key for it.
+const DEFAULT_MODEL = 'gemini-2.5-flash';
 let settings = { apiKey: '', model: DEFAULT_MODEL };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('ember.settings') || '{}')); } catch { /* private mode etc. */ }
-if (!settings.model) settings.model = DEFAULT_MODEL;
 function saveSettings() { try { localStorage.setItem('ember.settings', JSON.stringify(settings)); } catch { /* ignore */ } }
+if (!settings.model) settings.model = DEFAULT_MODEL;
+if (settings.v !== 2) {                       // one-time migration: 3.6 was the old (free-tier-incompatible) default
+  if (settings.model === 'gemini-3.6-flash') settings.model = DEFAULT_MODEL;
+  settings.v = 2; saveSettings();
+}
 
 /* ---------- storage (IndexedDB) ---------- */
 const DB_NAME = 'ember', STORE = 'ideas';
@@ -241,7 +247,13 @@ function friendlyApiError(status, msg) {
   if (status === 400 && /api key/i.test(msg)) return 'Google rejected the API key. Check it in Settings.';
   if (status === 401 || status === 403) return 'The API key was not accepted (' + (msg || status) + '). Check it in Settings.';
   if (status === 404) return 'Model “' + settings.model + '” was not found. Pick another model in Settings.';
-  if (status === 429) return 'Rate limit or free-tier quota reached. Wait a minute and retry.';
+  if (status === 429) {
+    const free = /^gemini-2\.5-flash(-lite)?$/.test(settings.model);
+    return free
+      ? 'Google says the quota for “' + settings.model + '” is used up' + (msg ? ' (' + msg.slice(0, 200) + ')' : '') + '. Wait a minute, or until tomorrow if it’s the daily limit, then retry.'
+      : 'Google refused “' + settings.model + '” with a quota error' + (msg ? ' (' + msg.slice(0, 200) + ')' : '') +
+        '. On the free tier, research with web sources only works with Gemini 2.5 Flash or 2.5 Flash-Lite. Switch the model in Settings, then retry.';
+  }
   if (status >= 500) return 'Google’s servers are busy right now. Retry in a moment.';
   return msg || 'Request failed (' + status + ').';
 }
@@ -409,7 +421,7 @@ async function processIdea(idea) {
   } catch (e) {
     const offline = e instanceof TypeError || !navigator.onLine;      // fetch network failure
     if (offline) await setStatus(idea, stage === 'transcript' ? 'pending-transcript' : 'pending-research');
-    else await setStatus(idea, 'error', { error: e.message || String(e), errorStage: stage, authError: e instanceof ApiError && [400, 401, 403, 404].includes(e.status) });
+    else await setStatus(idea, 'error', { error: e.message || String(e), errorStage: stage, authError: e instanceof ApiError && [400, 401, 403, 404, 429].includes(e.status) });
   }
 }
 
@@ -686,7 +698,8 @@ async function testKey(out) {
   if (!settings.apiKey) { say('Paste a key first.', 'bad'); return false; }
   say('Testing…');
   try {
-    await gemini({ contents: [{ role: 'user', parts: [{ text: 'Reply with the single word OK.' }] }] });
+    // Same path research uses (search grounding on), so a model/quota problem shows up here, not later.
+    await gemini({ contents: [{ role: 'user', parts: [{ text: 'Reply with the single word OK.' }] }], tools: [{ google_search: {} }] });
     say('Connected ✓', 'ok'); return true;
   } catch (e) {
     say(e instanceof TypeError ? 'Network error. Are you online?' : e.message, 'bad'); return false;
