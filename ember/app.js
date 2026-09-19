@@ -86,6 +86,7 @@ const BUSY = ['transcribing', 'researching'];
 
 async function persist(idea) { idea.updatedAt = Date.now(); await dbPut(idea); }
 async function setStatus(idea, status, extra = {}) {
+  if (!byId(idea.id)) return;                 // deleted while it was being processed: don't resurrect it
   Object.assign(idea, { status }, extra);
   await persist(idea);
   refresh(idea.id);
@@ -235,7 +236,20 @@ const API = 'https://generativelanguage.googleapis.com/v1beta';
 const PREFERRED_MODELS = ['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.5-flash'];   // fallbacks if the chosen model is gone
 
 // Models this key can call generateContent on, as bare IDs (e.g. "gemini-3.6-flash").
-const APP_VERSION = '7';
+const APP_VERSION = '8';
+
+/* "High demand" / overloaded responses are temporary: quietly retry every 10 s (up to ~5 min) instead of
+   showing an error. `workingId` is the idea being processed, so the UI can say what is going on. */
+const BUSY_RETRY_MS = 10000, BUSY_MAX_TRIES = 30;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const isBusyError = (status, msg) => [500, 502, 503, 504].includes(status) || /high demand|overloaded/i.test(msg);
+let workingId = null;
+const busyTries = new Map();                   // idea id -> current retry number (only while waiting)
+function setBusy(n) {
+  if (!workingId) return;
+  if (n) busyTries.set(workingId, n); else busyTries.delete(workingId);
+  refresh();
+}
 async function googleMessage(res) { try { return (await res.json()).error?.message || ''; } catch { return ''; } }
 async function listModels() {
   const res = await fetch(`${API}/models?pageSize=200`, { headers: { 'x-goog-api-key': settings.apiKey } });
@@ -244,35 +258,50 @@ async function listModels() {
   return (data.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent')).map(m => m.name.replace(/^models\//, ''));
 }
 
-async function gemini(body, retried = false) {
-  const res = await fetch(`${API}/models/${encodeURIComponent(settings.model)}:generateContent`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': settings.apiKey }, body: JSON.stringify(body) });
-  if (res.ok) return res.json();
+// ctx.quiet: never wait/retry on "busy" (used by the Settings tests). ctx.retried: already switched model once.
+async function gemini(body, ctx = {}) {
+  const retried = !!ctx.retried;
+  for (let attempt = 1; ; attempt++) {
+    const res = await fetch(`${API}/models/${encodeURIComponent(settings.model)}:generateContent`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': settings.apiKey }, body: JSON.stringify(body) });
+    if (res.ok) { if (attempt > 1) setBusy(0); return res.json(); }
 
-  let msg = '';
-  try { msg = (await res.json()).error?.message || ''; } catch { /* not json */ }
-  const raw = ` [HTTP ${res.status}${msg ? ' · Google: ' + msg.slice(0, 240) : ''}]`;   // always show Google's own words
-  if (res.status === 404 && !retried) {
+    let msg = '';
+    try { msg = (await res.json()).error?.message || ''; } catch { /* not json */ }
+    if (!ctx.quiet && isBusyError(res.status, msg) && attempt <= BUSY_MAX_TRIES) {
+      if (workingId && !byId(workingId)) throw new ApiError(0, 'This idea was deleted.');
+      setBusy(attempt);
+      await sleep(BUSY_RETRY_MS);
+      continue;
+    }
+    if (attempt > 1) setBusy(0);
+    return handleGeminiError(res.status, msg, body, retried, ctx);
+  }
+}
+
+async function handleGeminiError(status, msg, body, retried, ctx) {
+  const raw = ` [HTTP ${status}${msg ? ' · Google: ' + msg.slice(0, 240) : ''}]`;   // always show Google's own words
+  if (status === 404 && !retried) {
     // Is the configured model gone for this key (missing, or "no longer available to new users")?
     // Ask Google what exists, and switch to a current model if so.
     let list = null;
     try { list = await listModels(); } catch { /* can't tell; report the raw error below */ }
     if (list && (!list.includes(settings.model) || /no longer available/i.test(msg))) {
       const alt = PREFERRED_MODELS.find(m => m !== settings.model && list.includes(m));
-      if (alt) { settings.model = alt; saveSettings(); return gemini(body, true); }
+      if (alt) { settings.model = alt; saveSettings(); return gemini(body, { ...ctx, retried: true }); }
       const names = list.filter(m => /^gemini/.test(m)).slice(0, 14).join(', ') || 'none found';
       throw new ApiError(404, `“${settings.model}” isn’t available to your key. Models your key can use: ${names}.${raw}`);
     }
     if (list) throw new ApiError(404, `The model “${settings.model}” exists for your key, but Google rejected this request as not found.${raw}`);
   }
-  throw new ApiError(res.status, friendlyApiError(res.status, msg) + (res.status === 429 ? '' : raw));
+  throw new ApiError(status, friendlyApiError(status, msg) + (status === 429 ? '' : raw));
 }
 function friendlyApiError(status, msg) {
   if (status === 400 && /api key/i.test(msg)) return 'Google rejected the API key. Check it in Settings.';
   if (status === 401 || status === 403) return 'The API key was not accepted (' + (msg || status) + '). Check it in Settings.';
   if (status === 404) return 'Model “' + settings.model + '” was not found. Pick another model in Settings.';
   if (status === 429) return 'Google says the quota for “' + settings.model + '” is used up' + (msg ? ' (' + msg.slice(0, 200) + ')' : '') + '. Wait a minute, or until tomorrow if it’s the daily limit, then retry.';
-  if (status >= 500) return 'Google’s servers are busy right now. Retry in a moment.';
+  if (status >= 500 || /high demand|overloaded/i.test(msg)) return 'Google’s servers are too busy right now. Try again in a few minutes.';
   return msg || 'Request failed (' + status + ').';
 }
 function textOf(data) {
@@ -437,6 +466,7 @@ async function processQueue() {
 
 async function processIdea(idea) {
   let stage = idea.status === 'pending-transcript' ? 'transcript' : 'research';
+  workingId = idea.id;
   try {
     if (stage === 'transcript') {
       await setStatus(idea, 'transcribing', { error: '' });
@@ -455,6 +485,8 @@ async function processIdea(idea) {
     const offline = e instanceof TypeError || !navigator.onLine;      // fetch network failure
     if (offline) await setStatus(idea, stage === 'transcript' ? 'pending-transcript' : 'pending-research');
     else await setStatus(idea, 'error', { error: e.message || String(e), errorStage: stage, authError: e instanceof ApiError && [400, 401, 403, 404, 429].includes(e.status) });
+  } finally {
+    busyTries.delete(idea.id); workingId = null;
   }
 }
 
@@ -530,6 +562,7 @@ function renderSidebar() {
   list.innerHTML = html;
 }
 
+const BUSY_TEXT = 'Google is very busy right now. Ember is retrying automatically every few seconds; you don’t need to do anything.';
 function pendingNote(idea) {
   if (!settings.apiKey) return { head: 'Saved on this device', body: 'Add a Gemini API key to turn this idea into a research brief.', settings: true };
   if (!navigator.onLine) return { head: 'Saved — you’re offline', body: 'The research will start on its own as soon as you’re back online.' };
@@ -564,8 +597,8 @@ function renderMain() {
     `<div class="when">${fmtWhen(idea.createdAt)}</div></div>`;
 
   if (idea.status === 'done' && idea.doc) html += renderDoc(idea);
-  else if (idea.status === 'transcribing') html += `<div class="card status"><span class="spin"></span><div class="msg"><b>Transcribing your voice note…</b><span>This takes a few seconds.</span></div></div>`;
-  else if (idea.status === 'researching') html += `<div class="card status"><span class="spin"></span><div class="msg"><b>Researching <span data-since="${idea.startedAt || Date.now()}"></span></b><span>Searching the web for competitors, feasibility, costs and timelines. Keep this tab open; it usually takes 30–90 seconds.</span></div></div>`;
+  else if (idea.status === 'transcribing') html += `<div class="card status"><span class="spin"></span><div class="msg"><b>Transcribing your voice note…</b><span>${busyTries.has(idea.id) ? BUSY_TEXT : 'This takes a few seconds.'}</span></div></div>`;
+  else if (idea.status === 'researching') html += `<div class="card status"><span class="spin"></span><div class="msg"><b>Researching <span data-since="${idea.startedAt || Date.now()}"></span></b><span>${busyTries.has(idea.id) ? BUSY_TEXT : 'Working through competitors, feasibility, costs and timelines. Keep this tab open; it usually takes 30–90 seconds.'}</span></div></div>`;
   else if (idea.status === 'error') html += `<div class="card status err"><div class="msg"><b>${idea.errorStage === 'transcript' ? 'Couldn’t transcribe' : 'Research didn’t finish'}</b><span>${esc(idea.error || 'Something went wrong.')}</span>
       <div class="btns"><button class="btn small primary" data-act="retry">${icon('refresh')}Retry</button>${idea.authError ? '<button class="btn small" data-act="settings">Open Settings</button>' : ''}<button class="btn small danger" data-act="delete">${icon('trash')}Delete</button></div></div></div>`;
   else { const n = pendingNote(idea); html += `<div class="card status"><div class="msg"><b>${n.head}</b><span>${n.body}</span>${n.settings ? '<div class="btns"><button class="btn small primary" data-act="guide">Set up my key</button></div>' : ''}</div></div>`; }
@@ -734,9 +767,9 @@ async function testKey(out) {
   say('Testing…');
   const ping = { contents: [{ role: 'user', parts: [{ text: 'Reply with the single word OK.' }] }] };
   try {
-    await gemini(ping);                                  // proves the key and model work
+    await gemini(ping, { quiet: true });                 // proves the key and model work
     try {                                                // then check whether web search (sources) is available
-      await gemini({ ...ping, tools: [{ google_search: {} }] });
+      await gemini({ ...ping, tools: [{ google_search: {} }] }, { quiet: true });
       say('Connected ✓ (' + settings.model + '), web search available', 'ok');
     } catch (e) {
       if (e instanceof TypeError) throw e;

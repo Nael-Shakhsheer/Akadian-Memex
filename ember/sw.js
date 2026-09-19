@@ -1,5 +1,5 @@
 // Ember service worker: caches the app shell so the app opens (and captures ideas) offline.
-const CACHE = 'ember-v8';
+const CACHE = 'ember-v9';
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'
