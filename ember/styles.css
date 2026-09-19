@@ -200,6 +200,8 @@ sup.cite { font-size: 11px; margin-left: 2px; white-space: nowrap; }
 sup.cite a { text-decoration: none; font-weight: 700; padding: 0 1px; }
 sup.cite a:hover { text-decoration: underline; }
 
+.notice { margin: 4px 0 6px; padding: 12px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+.notice b { display: block; margin-bottom: 2px; }
 .sources { margin-top: 26px; padding-top: 6px; border-top: 1px solid var(--line); }
 .sources h2 { font-size: 13px; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); margin: 18px 0 8px; }
 .sources ol { margin: 0; padding-left: 24px; font-size: 14px; }

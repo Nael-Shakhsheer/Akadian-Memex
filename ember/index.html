@@ -68,7 +68,7 @@
       <p>Ember writes its research briefs with Google’s Gemini AI. To use it you need your own <b>Gemini API key</b>: a private password that lets this app talk to Gemini for you.</p>
       <ul class="wz-list">
         <li>Takes about a minute.</li>
-        <li>Google offers a free usage tier for Gemini. Check the current limits in AI Studio.</li>
+        <li>Google’s free tier writes the brief from the AI’s own knowledge. For briefs backed by web sources, Google requires billing to be turned on for the key.</li>
         <li>Your key is stored only on this device.</li>
       </ul>
       <p class="wz-note">Your ideas are saved instantly even before you finish setup. They’ll be researched as soon as a key is added.</p>
@@ -120,13 +120,12 @@
       <span>Model</span>
       <input id="model" list="modelList" autocapitalize="off" spellcheck="false">
       <datalist id="modelList">
-        <option value="gemini-2.5-flash"></option>
-        <option value="gemini-2.5-flash-lite"></option>
         <option value="gemini-3.6-flash"></option>
         <option value="gemini-3.7-flash"></option>
         <option value="gemini-3.8-flash"></option>
+        <option value="gemini-3.5-flash"></option>
       </datalist>
-      <small>Keep <b>gemini-2.5-flash</b> on the free tier: it’s the one that allows web-search research for free. The 3.x models need billing turned on.</small>
+      <small>Older Gemini 2.5 models are closed to new accounts. Web sources need billing turned on for your key; without it Ember still writes the brief, just without web search.</small>
     </label>
 
     <div class="row">

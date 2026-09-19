@@ -18,12 +18,12 @@ Each user brings their own free Gemini API key ([aistudio.google.com/apikey](htt
 
 - **Capture first.** Text and voice notes are written to IndexedDB before anything else happens. With no signal or no key, the idea just waits and is processed automatically later.
 - **Voice.** Recorded in-browser as 16 kHz mono WAV (works the same on iOS Safari, the home-screen app, Android and desktop) and transcribed by Gemini.
-- **Research.** One Gemini call with Google Search grounding. Citations are attached as `[n]` markers and a source list from the grounding metadata.
+- **Research.** One Gemini call with Google Search grounding; citations are attached as `[n]` markers plus a source list from the grounding metadata. If the key has no Search access, it retries without search and labels the brief as unsourced.
 - **Offline.** A service worker caches the app shell, so it opens and captures ideas offline.
 
 ## Notes
 
 - Keep the app open while a brief generates (typically 30–90 s). iOS may pause it in the background; it resumes when you come back.
 - iOS can clear website data for sites you haven't opened in a while. Installed home-screen apps are exempt, but use **Settings → Export backup** occasionally.
-- The default model is `gemini-2.5-flash`. Google Search grounding (the source-backed research) is free only on 2.5 Flash / 2.5 Flash-Lite; the 3.x models need billing enabled on your key. Change it in Settings if Google retires it.
+- The default model is `gemini-3.6-flash` (the Gemini 2.5 models are closed to new accounts). Google Search grounding, which provides the cited sources, is a paid feature for Gemini 3 models, so it needs billing enabled on the key. Without it, Ember still writes the brief but marks it "written without web search" and includes no sources. Change the model in Settings if Google retires it.
 - Briefs are AI-generated starting points. Check the sources before relying on them.

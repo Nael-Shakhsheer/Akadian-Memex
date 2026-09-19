@@ -39,16 +39,16 @@ function toast(msg, ms = 3200) {
 }
 
 /* ---------- settings (localStorage, best effort) ---------- */
-// Google Search grounding (how Ember finds and cites sources) is only free on Gemini 2.5 Flash / Flash-Lite;
-// the 3.x models need a billing-enabled key for it.
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+// Gemini 2.5 models are closed to new Google accounts, so the default is a 3.x model. On the free tier those
+// work for plain generation but not for Google Search grounding (web sources); research() degrades gracefully.
+const DEFAULT_MODEL = 'gemini-3.6-flash';
 let settings = { apiKey: '', model: DEFAULT_MODEL };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('ember.settings') || '{}')); } catch { /* private mode etc. */ }
 function saveSettings() { try { localStorage.setItem('ember.settings', JSON.stringify(settings)); } catch { /* ignore */ } }
 if (!settings.model) settings.model = DEFAULT_MODEL;
-if (settings.v !== 2) {                       // one-time migration: 3.6 was the old (free-tier-incompatible) default
-  if (settings.model === 'gemini-3.6-flash') settings.model = DEFAULT_MODEL;
-  settings.v = 2; saveSettings();
+if (settings.v !== 3) {                       // one-time migration away from 2.5 models
+  if (/^gemini-2\.5/.test(settings.model)) settings.model = DEFAULT_MODEL;
+  settings.v = 3; saveSettings();
 }
 
 /* ---------- storage (IndexedDB) ---------- */
@@ -232,10 +232,10 @@ const blobToBase64 = blob => new Promise((res, rej) => {
 class ApiError extends Error { constructor(status, message) { super(message); this.status = status; } }
 
 const API = 'https://generativelanguage.googleapis.com/v1beta';
-const FREE_GROUNDING_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];   // free-tier models that allow Google Search
+const PREFERRED_MODELS = ['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.5-flash'];   // fallbacks if the chosen model is gone
 
-// Models this key can call generateContent on, as bare IDs (e.g. "gemini-2.5-flash").
-const APP_VERSION = '6';
+// Models this key can call generateContent on, as bare IDs (e.g. "gemini-3.6-flash").
+const APP_VERSION = '7';
 async function googleMessage(res) { try { return (await res.json()).error?.message || ''; } catch { return ''; } }
 async function listModels() {
   const res = await fetch(`${API}/models?pageSize=200`, { headers: { 'x-goog-api-key': settings.apiKey } });
@@ -253,11 +253,12 @@ async function gemini(body, retried = false) {
   try { msg = (await res.json()).error?.message || ''; } catch { /* not json */ }
   const raw = ` [HTTP ${res.status}${msg ? ' · Google: ' + msg.slice(0, 240) : ''}]`;   // always show Google's own words
   if (res.status === 404 && !retried) {
-    // Is the configured model really missing for this key? Ask Google what exists, and recover if so.
+    // Is the configured model gone for this key (missing, or "no longer available to new users")?
+    // Ask Google what exists, and switch to a current model if so.
     let list = null;
     try { list = await listModels(); } catch { /* can't tell; report the raw error below */ }
-    if (list && !list.includes(settings.model)) {
-      const alt = FREE_GROUNDING_MODELS.find(m => list.includes(m));
+    if (list && (!list.includes(settings.model) || /no longer available/i.test(msg))) {
+      const alt = PREFERRED_MODELS.find(m => m !== settings.model && list.includes(m));
       if (alt) { settings.model = alt; saveSettings(); return gemini(body, true); }
       const names = list.filter(m => /^gemini/.test(m)).slice(0, 14).join(', ') || 'none found';
       throw new ApiError(404, `“${settings.model}” isn’t available to your key. Models your key can use: ${names}.${raw}`);
@@ -270,13 +271,7 @@ function friendlyApiError(status, msg) {
   if (status === 400 && /api key/i.test(msg)) return 'Google rejected the API key. Check it in Settings.';
   if (status === 401 || status === 403) return 'The API key was not accepted (' + (msg || status) + '). Check it in Settings.';
   if (status === 404) return 'Model “' + settings.model + '” was not found. Pick another model in Settings.';
-  if (status === 429) {
-    const free = /^gemini-2\.5-flash(-lite)?$/.test(settings.model);
-    return free
-      ? 'Google says the quota for “' + settings.model + '” is used up' + (msg ? ' (' + msg.slice(0, 200) + ')' : '') + '. Wait a minute, or until tomorrow if it’s the daily limit, then retry.'
-      : 'Google refused “' + settings.model + '” with a quota error' + (msg ? ' (' + msg.slice(0, 200) + ')' : '') +
-        '. On the free tier, research with web sources only works with Gemini 2.5 Flash or 2.5 Flash-Lite. Switch the model in Settings, then retry.';
-  }
+  if (status === 429) return 'Google says the quota for “' + settings.model + '” is used up' + (msg ? ' (' + msg.slice(0, 200) + ')' : '') + '. Wait a minute, or until tomorrow if it’s the daily limit, then retry.';
   if (status >= 500) return 'Google’s servers are busy right now. Retry in a moment.';
   return msg || 'Request failed (' + status + ').';
 }
@@ -301,11 +296,12 @@ async function transcribe(blob) {
   return /^\[?no speech\]?$/i.test(t) ? '' : t;
 }
 
-const SYSTEM_PROMPT = `You are a sharp, candid research analyst helping someone decide whether a raw idea is worth pursuing. The idea was captured quickly, possibly by voice, so it may be rough or ambiguous: adopt the most reasonable interpretation (state it in one short line if it matters) and never ask questions. Reply in the same language as the idea.
+const PROMPT_INTRO = `You are a sharp, candid research analyst helping someone decide whether a raw idea is worth pursuing. The idea was captured quickly, possibly by voice, so it may be rough or ambiguous: adopt the most reasonable interpretation (state it in one short line if it matters) and never ask questions. Reply in the same language as the idea.`;
+const PROMPT_SEARCH = `Use Google Search to ground everything factual: existing products and prior art, market size and demand, technical feasibility, costs, regulation, and realistic timelines. Prefer primary and reputable sources. Never invent facts, statistics or sources; if evidence is thin, say so plainly. Be honest: concluding that an idea is a long shot is a valid, useful answer.`;
+const PROMPT_NO_SEARCH = `You have no web access for this task, so write from your general knowledge only. Do not state specific statistics, prices, dates or URLs unless you are certain, never invent sources or products, and where something needs checking say so briefly (e.g. "verify: …"). If you are unsure, say so plainly. Be honest: concluding that an idea is a long shot is a valid, useful answer.`;
+const systemPrompt = grounded => PROMPT_INTRO + '\n\n' + (grounded ? PROMPT_SEARCH : PROMPT_NO_SEARCH) + '\n\n' + PROMPT_FORMAT;
 
-Use Google Search to ground everything factual: existing products and prior art, market size and demand, technical feasibility, costs, regulation, and realistic timelines. Prefer primary and reputable sources. Never invent facts, statistics or sources; if evidence is thin, say so plainly. Be honest: concluding that an idea is a long shot is a valid, useful answer.
-
-The brief must fit on 1–2 pages (roughly 700–900 words). Be specific and concrete. No filler, no generic advice, no hedging boilerplate.
+const PROMPT_FORMAT = `The brief must fit on 1–2 pages (roughly 700–900 words). Be specific and concrete. No filler, no generic advice, no hedging boilerplate.
 
 Output exactly this structure in Markdown, with no preamble and no closing remarks:
 
@@ -338,14 +334,28 @@ One concrete thing to do in the first hour.
 
 Do not write a sources section and do not add your own citation numbers; citations are attached automatically.`;
 
+const researchRequest = (text, grounded) => ({
+  systemInstruction: { parts: [{ text: systemPrompt(grounded) }] },
+  contents: [{ role: 'user', parts: [{ text: 'The idea:\n"""\n' + text + '\n"""\n\nWrite the research brief.' }] }],
+  ...(grounded ? { tools: [{ google_search: {} }] } : {}),
+  generationConfig: { temperature: 0.4 }
+});
+
+// Try with Google Search first. Accounts without search access (e.g. free tier on Gemini 3.x) get a
+// quota/permission error; in that case write the brief without web sources and say so in the document.
 async function research(text) {
-  const data = await gemini({
-    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-    contents: [{ role: 'user', parts: [{ text: 'The idea:\n"""\n' + text + '\n"""\n\nWrite the research brief.' }] }],
-    tools: [{ google_search: {} }],
-    generationConfig: { temperature: 0.4 }
-  });
-  return buildDoc(textOf(data), data.candidates?.[0]?.groundingMetadata);
+  let data, grounded = true;
+  try {
+    data = await gemini(researchRequest(text, true));
+  } catch (e) {
+    const noSearch = e instanceof ApiError && (e.status === 429 || (e.status === 400 && /search|ground|tool/i.test(e.message)));
+    if (!noSearch) throw e;
+    grounded = false;
+    data = await gemini(researchRequest(text, false));
+  }
+  const doc = buildDoc(textOf(data), grounded ? data.candidates?.[0]?.groundingMetadata : null);
+  doc.grounded = grounded;
+  return doc;
 }
 
 /* Turn Gemini's grounding metadata into numbered inline citations + a source list. */
@@ -572,13 +582,14 @@ function renderDoc(idea) {
       ${d.score != null ? `<div class="verdict ${band}"><b>${d.score}</b><span>/ 10</span></div>` : ''}
       <div><div class="vl">${esc(d.verdict || 'Research brief')}</div><h1>${esc(idea.title || label(idea))}</h1>
       <div class="meta">Research brief · ${esc(fmtWhen(d.generatedAt))} · ${esc(d.model)}</div></div></header>`;
-  const src = d.sources.length ? `<section class="sources"><h2>Sources</h2><ol>${d.sources.map((s, n) =>
+  const notice = d.grounded === false ? `<div class="notice"><b>Written without web search.</b> Your Google plan doesn’t include Search for this model (Google lists it as a paid feature for Gemini 3 models), so this brief comes from the AI’s general knowledge and has no sources. Treat facts and numbers as unverified. To get cited sources, turn on billing for your key in Google AI Studio, then tap Regenerate.</div>` : '';
+  const src = d.grounded === false ? '' : d.sources.length ? `<section class="sources"><h2>Sources</h2><ol>${d.sources.map((s, n) =>
     `<li id="src-${n + 1}"><a href="${esc(s.uri)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a></li>`).join('')}</ol>
     ${d.queries.length ? `<div class="queries">Searched: ${d.queries.map(esc).join(' · ')}</div>` : ''}
     ${d.searchWidget ? `<iframe class="sw" title="Google Search suggestions" sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc="${esc(d.searchWidget)}"></iframe>` : ''}
     <div class="disclaimer">AI-generated starting point. Verify important claims against the sources before you rely on them.</div></section>`
     : `<section class="sources"><div class="disclaimer">No web sources were returned for this brief, so treat its claims with extra caution. Try Regenerate.</div></section>`;
-  return `<article class="doc">${head}<div class="doc-body">${md(d.markdown)}</div>${src}</article>
+  return `<article class="doc">${head}${notice}<div class="doc-body">${md(d.markdown)}</div>${src}</article>
     <div class="actions">
       <button class="btn small" data-act="copy">${icon('copy')}Copy</button>
       <button class="btn small" data-act="print">${icon('print')}Save as PDF</button>
@@ -593,6 +604,7 @@ function docMarkdown(idea) {
   return `# ${idea.title || label(idea)}\n\n` +
     (d.verdict ? `**Verdict:** ${d.verdict}${d.score != null ? ` (${d.score}/10)` : ''}\n\n` : '') +
     `> **Original idea:** ${idea.text.replace(/\n+/g, ' ')}\n\n` +
+    (d.grounded === false ? `*Written without web search: general knowledge only, no sources. Verify facts before relying on them.*\n\n` : '') +
     plainCites(d.markdown) + (src ? `\n\n## Sources\n${src}\n` : '\n');
 }
 
@@ -720,10 +732,17 @@ async function testKey(out) {
   const say = (msg, cls = '') => { out.textContent = msg; out.className = out.className.replace(/\b(ok|bad)\b/g, '').trim() + (cls ? ' ' + cls : ''); };
   if (!settings.apiKey) { say('Paste a key first.', 'bad'); return false; }
   say('Testing…');
+  const ping = { contents: [{ role: 'user', parts: [{ text: 'Reply with the single word OK.' }] }] };
   try {
-    // Same path research uses (search grounding on), so a model/quota problem shows up here, not later.
-    await gemini({ contents: [{ role: 'user', parts: [{ text: 'Reply with the single word OK.' }] }], tools: [{ google_search: {} }] });
-    say('Connected ✓ (' + settings.model + ')', 'ok'); return true;
+    await gemini(ping);                                  // proves the key and model work
+    try {                                                // then check whether web search (sources) is available
+      await gemini({ ...ping, tools: [{ google_search: {} }] });
+      say('Connected ✓ (' + settings.model + '), web search available', 'ok');
+    } catch (e) {
+      if (e instanceof TypeError) throw e;
+      say('Connected ✓ (' + settings.model + '), but web search isn’t available on your plan, so briefs will have no sources.', 'ok');
+    }
+    return true;
   } catch (e) {
     say(e instanceof TypeError ? 'Network error. Are you online?' : e.message, 'bad'); return false;
   }
