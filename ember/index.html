@@ -58,6 +58,51 @@
   </main>
 </div>
 
+<dialog id="welcome" aria-labelledby="wzTitle">
+  <div class="dlg wz">
+    <div class="dlg-head"><span class="wz-label" id="wzLabel">Step 1 of 3</span><button type="button" class="icon-btn" id="wzClose" aria-label="Close guide" data-icon="x"></button></div>
+    <div class="wz-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+
+    <section data-step="1">
+      <h2 id="wzTitle">Meet your research assistant</h2>
+      <p>Ember writes its research briefs with Google’s Gemini AI. To use it you need your own <b>Gemini API key</b>: a private password that lets this app talk to Gemini for you.</p>
+      <ul class="wz-list">
+        <li>Takes about a minute.</li>
+        <li>Google offers a free usage tier for Gemini. Check the current limits in AI Studio.</li>
+        <li>Your key is stored only on this device.</li>
+      </ul>
+      <p class="wz-note">Your ideas are saved instantly even before you finish setup. They’ll be researched as soon as a key is added.</p>
+    </section>
+
+    <section data-step="2" hidden>
+      <h2>Get your key from Google</h2>
+      <a class="btn primary block" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Open Google AI Studio ↗</a>
+      <ol class="wz-steps">
+        <li>Sign in with your Google account and accept the terms if asked.</li>
+        <li>Tap <b>Create API key</b>.</li>
+        <li>Copy the key that appears (use the copy icon next to it).</li>
+      </ol>
+      <p class="wz-note">Treat the key like a password: don’t share it or post it anywhere public.</p>
+      <p>When you’ve copied it, come back here and tap <b>Next</b>.</p>
+    </section>
+
+    <section data-step="3" hidden>
+      <h2>Paste it here</h2>
+      <div class="key-row">
+        <input id="wzKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste your key" aria-label="Gemini API key">
+        <button type="button" class="chip" id="wzPaste">Paste</button>
+      </div>
+      <div class="test-out" id="wzOut" role="status"></div>
+    </section>
+
+    <div class="dlg-foot">
+      <button type="button" class="btn" id="wzBack">Back</button>
+      <button type="button" class="btn primary" id="wzNext">Next</button>
+    </div>
+    <button type="button" class="wz-skip" id="wzSkip">Skip for now</button>
+  </div>
+</dialog>
+
 <dialog id="settings">
   <form method="dialog" class="dlg">
     <div class="dlg-head"><h2>Settings</h2><button class="icon-btn" value="close" aria-label="Close" data-icon="x"></button></div>
@@ -68,7 +113,7 @@
         <input id="apiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste your key">
         <button type="button" class="chip" id="showKey">Show</button>
       </div>
-      <small>Free at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. It is stored only in this browser and sent only to Google.</small>
+      <small>Get one at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> (<a href="#" id="openGuide">step-by-step guide</a>). It is stored only in this browser and sent only to Google.</small>
     </label>
 
     <label class="field">

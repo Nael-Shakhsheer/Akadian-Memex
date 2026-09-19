@@ -506,10 +506,9 @@ function renderMain() {
         <h1>What’s the idea?</h1>
         <p>Say it or type it. It’s saved the instant you hit send, then researched: plausibility, challenges, approach, timeline and sources.</p>
       </section>
-      ${settings.apiKey ? '' : `<section class="card"><h3>One-time setup</h3>
-        <p>Ember does its research with Google’s Gemini, using your own free API key.</p>
-        <ol><li>Open <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> and create a key.</li><li>Paste it in Settings.</li></ol>
-        <button class="btn primary" data-act="settings">Add API key</button></section>`}
+      ${settings.apiKey ? '' : `<section class="card"><h3>Finish setup (about a minute)</h3>
+        <p>Ember researches your ideas with Google’s Gemini, using your own API key. Your ideas are saved either way.</p>
+        <div class="row"><button class="btn primary" data-act="guide">Show me how</button><button class="btn" data-act="settings">I already have a key</button></div></section>`}
       ${ios ? `<section class="card"><h3>Add Ember to your Home Screen</h3>
         <p>In Safari tap the Share button, then <b>Add to Home Screen</b>, so ideas are one tap away.</p></section>` : ''}`;
     return;
@@ -524,7 +523,7 @@ function renderMain() {
   else if (idea.status === 'researching') html += `<div class="card status"><span class="spin"></span><div class="msg"><b>Researching <span data-since="${idea.startedAt || Date.now()}"></span></b><span>Searching the web for competitors, feasibility, costs and timelines. Keep this tab open; it usually takes 30–90 seconds.</span></div></div>`;
   else if (idea.status === 'error') html += `<div class="card status err"><div class="msg"><b>${idea.errorStage === 'transcript' ? 'Couldn’t transcribe' : 'Research didn’t finish'}</b><span>${esc(idea.error || 'Something went wrong.')}</span>
       <div class="btns"><button class="btn small primary" data-act="retry">${icon('refresh')}Retry</button>${idea.authError ? '<button class="btn small" data-act="settings">Open Settings</button>' : ''}<button class="btn small danger" data-act="delete">${icon('trash')}Delete</button></div></div></div>`;
-  else { const n = pendingNote(idea); html += `<div class="card status"><div class="msg"><b>${n.head}</b><span>${n.body}</span>${n.settings ? '<div class="btns"><button class="btn small primary" data-act="settings">Add API key</button></div>' : ''}</div></div>`; }
+  else { const n = pendingNote(idea); html += `<div class="card status"><div class="msg"><b>${n.head}</b><span>${n.body}</span>${n.settings ? '<div class="btns"><button class="btn small primary" data-act="guide">Set up my key</button></div>' : ''}</div></div>`; }
 
   if (idea.status !== 'done' && idea.status !== 'error') html += `<div class="actions"><button class="btn small danger" data-act="delete">${icon('trash')}Delete</button></div>`;
   thread.innerHTML = html;
@@ -594,6 +593,7 @@ $('#thread').addEventListener('click', async e => {
   const idea = byId(currentId);
   switch (b.dataset.act) {
     case 'settings': openSettings(); break;
+    case 'guide': showWelcome(); break;
     case 'retry': if (idea) retryIdea(idea); break;
     case 'delete': if (idea && confirm('Delete this idea and its research?')) deleteIdea(idea.id); break;
     case 'print': window.print(); break;
@@ -680,18 +680,19 @@ dlg.addEventListener('close', applySettings);
 $('#saveSettings').addEventListener('click', applySettings);
 $('#apiKey').addEventListener('input', readSettingsForm);     // never lose a pasted key, however the dialog is dismissed
 $('#model').addEventListener('input', readSettingsForm);
-$('#testKey').addEventListener('click', async () => {
-  readSettingsForm();
-  const out = $('#testOut');
-  if (!settings.apiKey) { out.textContent = 'Paste a key first.'; out.className = 'test-out bad'; return; }
-  out.textContent = 'Testing…'; out.className = 'test-out';
+/* Ping Gemini with the saved key and report the result in `out`. Returns true on success. */
+async function testKey(out) {
+  const say = (msg, cls = '') => { out.textContent = msg; out.className = out.className.replace(/\b(ok|bad)\b/g, '').trim() + (cls ? ' ' + cls : ''); };
+  if (!settings.apiKey) { say('Paste a key first.', 'bad'); return false; }
+  say('Testing…');
   try {
     await gemini({ contents: [{ role: 'user', parts: [{ text: 'Reply with the single word OK.' }] }] });
-    out.textContent = 'Connected ✓'; out.className = 'test-out ok';
+    say('Connected ✓', 'ok'); return true;
   } catch (e) {
-    out.textContent = e instanceof TypeError ? 'Network error. Are you online?' : e.message; out.className = 'test-out bad';
+    say(e instanceof TypeError ? 'Network error. Are you online?' : e.message, 'bad'); return false;
   }
-});
+}
+$('#testKey').addEventListener('click', () => { readSettingsForm(); testKey($('#testOut')); });
 $('#exportBtn').addEventListener('click', () => {
   const data = ideas.map(({ audio, ...rest }) => rest);
   const a = document.createElement('a');
@@ -723,6 +724,54 @@ $('#wipeBtn').addEventListener('click', async () => {
   dlg.close(); go(null); refresh();
 });
 
+/* ---------- first-run guide: how to get a Gemini API key ---------- */
+const wz = $('#welcome');
+let wzStep = 1, wzOk = false;
+function renderWelcome() {
+  wz.querySelectorAll('[data-step]').forEach(s => { s.hidden = Number(s.dataset.step) !== wzStep; });
+  wz.querySelectorAll('.wz-dots i').forEach((d, n) => d.classList.toggle('on', n < wzStep));
+  $('#wzLabel').textContent = `Step ${wzStep} of 3`;
+  $('#wzBack').hidden = wzStep === 1;
+  $('#wzSkip').hidden = wzOk;
+  $('#wzNext').textContent = wzStep === 3 ? (wzOk ? 'Start capturing' : 'Save & test') : 'Next';
+}
+function showWelcome() {
+  wzStep = 1; wzOk = false;
+  $('#wzKey').value = settings.apiKey; $('#wzKey').type = 'password';
+  $('#wzOut').textContent = ''; $('#wzOut').className = 'test-out';
+  try { localStorage.setItem('ember.welcomed', '1'); } catch { /* ignore */ }
+  closeNav();
+  if (dlg.open) dlg.close();
+  renderWelcome();
+  if (!wz.open) wz.showModal();
+}
+function closeWelcome() { if (wz.open) wz.close(); refresh(); processQueue(); }
+$('#wzNext').addEventListener('click', async () => {
+  if (wzStep < 3) { wzStep++; renderWelcome(); if (wzStep === 3 && !isCoarse) $('#wzKey').focus(); return; }
+  if (wzOk) { closeWelcome(); if (!isCoarse) $('#ideaInput').focus(); return; }
+  settings.apiKey = $('#wzKey').value.trim().replace(/^["']|["']$/g, '');
+  saveSettings();
+  $('#wzNext').disabled = true;
+  wzOk = await testKey($('#wzOut'));
+  $('#wzNext').disabled = false;
+  renderWelcome();
+});
+$('#wzBack').addEventListener('click', () => { if (wzStep > 1) { wzStep--; wzOk = false; renderWelcome(); } });
+$('#wzSkip').addEventListener('click', closeWelcome);
+$('#wzClose').addEventListener('click', closeWelcome);
+$('#wzKey').addEventListener('input', () => { wzOk = false; renderWelcome(); });
+$('#wzPaste').addEventListener('click', async () => {
+  try {
+    const t = (await navigator.clipboard.readText()).trim();
+    if (!t) throw new Error('empty');
+    $('#wzKey').value = t; wzOk = false; renderWelcome();
+    $('#wzOut').textContent = 'Pasted. Tap “Save & test”.'; $('#wzOut').className = 'test-out';
+  } catch {
+    $('#wzOut').textContent = 'Couldn’t read the clipboard. Press and hold in the box and choose Paste.'; $('#wzOut').className = 'test-out bad';
+  }
+});
+$('#openGuide').addEventListener('click', e => { e.preventDefault(); showWelcome(); });
+
 /* ---------- boot ---------- */
 window.addEventListener('online', processQueue);
 window.addEventListener('offline', refresh);
@@ -743,6 +792,9 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) proc
   if (!location.hash) history.replaceState(null, '', '#/new');
   readHash();
   processQueue();
+  let welcomed = false;
+  try { welcomed = !!localStorage.getItem('ember.welcomed'); } catch { /* ignore */ }
+  if (!settings.apiKey && !welcomed) showWelcome();
   try { navigator.storage?.persist?.(); } catch { /* ignore */ }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
 })();
