@@ -328,6 +328,9 @@ select, textarea { font: inherit; color: inherit; background: var(--bg, #f6f3ec)
 ::-webkit-scrollbar-corner { background: transparent; }
 input,textarea,select { accent-color: var(--accent); }
 input:focus-visible,textarea:focus-visible,select:focus-visible,button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* The composer pill already turns accent on :focus-within, so the control's own ring would draw a
+   second outline inside the first. Suppress the inner one; the pill remains the focus indicator. */
+.composer-box textarea:focus-visible { outline: none; }
 .theme-colors { display:flex; flex-wrap:wrap; gap:16px; }
 .theme-colors .field { flex:1; min-width:110px; }
 .theme-colors input[type=color] { height:48px; padding:4px; cursor:pointer; }
