@@ -1,5 +1,5 @@
 // Memex service worker: caches the app shell so the app opens (and captures ideas) offline.
-const CACHE = 'memex-v11';
+const CACHE = 'memex-v11-1';
 // Cache prefix left over from the release this app was renamed from; listed only so the stale
 // shell is evicted on upgrade. Remove once no client is still serving it.
 const RETIRED_CACHE_PREFIX = 'ember-';

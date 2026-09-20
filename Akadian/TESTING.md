@@ -19,6 +19,18 @@ Worth exercising specifically, since it is new and untested: opening the app wit
 previous release still present, both with and without encryption enabled, to confirm ideas appear
 and the existing passphrase unlocks.
 
+## Version 11.1 (follow-up chat fix)
+
+Run on 2026-09-20 in Chrome via Playwright with mocked Gemini responses, on Windows:
+
+- `smoke.cjs`, `sync.cjs` and `v11.cjs` all pass (this also re-ran the rename/storage-migration paths that the note above said had not been re-run).
+- New `tests/chatfix.cjs` passes: busy retry, per-minute wait with a visible note, daily-quota message with reset time and no pointless retry, question kept and history left clean after a failure, oversized brief/history trimmed and opening with a user turn, low-thinking request with fallback when a model rejects it, cut-off and empty-at-limit answers explained, and comparison chat using the same path.
+- `chatfix.cjs` was also run against the pre-fix code and **fails** there, so it does detect the bug.
+
+Not verified: the real Google error wording. The quota classification relies on Google's `RetryInfo` and quota identifiers in HTTP 429 responses, which the docs do not fully specify; unrecognised 429s fall back to a generic quota message. The `thinkingLevel` field name for `generateContent` was not confirmed against live Google docs (the fallback covers a rejection).
+
+Run: `python -m http.server 8765 --directory memex`, then `node tests/chatfix.cjs` (set `BASE` to test another address).
+
 ## Prior validation
 
 Validated in headless Chromium on 2026-09-19 using Playwright. External service requests were
