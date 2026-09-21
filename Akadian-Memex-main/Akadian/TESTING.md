@@ -1,3 +1,7 @@
+## Model recovery patch
+
+`node tests/gemini-client.cjs` passed: 404 fallback, paginated model discovery, filtering of specialty models, successful-model persistence, bounded 503 backoff, cancellation, no retry on authentication errors, key redaction, no available models and exhausted fallback. Study core and controller tests also passed again. Live Gemini and browser testing remain unverified.
+
 # Study release validation
 
 Run from `Akadian`:

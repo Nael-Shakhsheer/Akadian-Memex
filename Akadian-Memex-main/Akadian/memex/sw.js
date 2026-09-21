@@ -1,10 +1,10 @@
 // Memex service worker: caches the app shell so the app opens (and captures ideas) offline.
-const CACHE = 'memex-study-v1';
+const CACHE = 'memex-study-v2-model-recovery';
 // Cache prefix left over from the release this app was renamed from; listed only so the stale
 // shell is evicted on upgrade. Remove once no client is still serving it.
 const RETIRED_CACHE_PREFIX = 'ember-';
 const SHELL = [
-  './', 'index.html', 'ideas.html', 'study.js', 'study-core.js', 'study.css', 'styles.css', 'app.js', 'storage.js', 'appearance.js', 'manifest.webmanifest',
+  './', 'index.html', 'ideas.html', 'study.js', 'study-core.js', 'gemini-client.js', 'study.css', 'styles.css', 'app.js', 'storage.js', 'appearance.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'
 ];
 

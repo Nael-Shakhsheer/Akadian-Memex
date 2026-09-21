@@ -48,7 +48,7 @@ Study sets, sources, answers and ratings live in the existing IndexedDB database
 
 Study history is device-local. Ideas backup/sync does not include study sets. Printing can preserve a human-readable copy. Do not clear browser data if you need to retain the study history.
 
-Extract/generate sends source content to Google; the verification call sends it again with candidates. The key is sent only to Google, and is stored locally (encrypted when the vault is enabled). The key is visible to app code while unlocked. This remains a bring-your-own-key static prototype, not a production server-managed authentication/billing system. API calls are not cached by the service worker. Model discovery and requests use timeouts; generation can be cancelled and does not silently retry billable calls.
+Extract/generate sends source content to Google; the verification call sends it again with candidates. The key is sent only to Google, and is stored locally (encrypted when the vault is enabled). The key is visible to app code while unlocked. This remains a bring-your-own-key static prototype, not a production server-managed authentication/billing system. API calls are not cached by the service worker. Model discovery and requests use timeouts. A 404 triggers a fresh, paginated model list and up to two switches to available Gemini text models. Successful selections are saved. Temporary HTTP 500/502/503/504 failures receive up to three retries with exponential backoff and jitter; progress is visible and cancellation interrupts the wait. Retries may consume provider quota. Authentication, quota and malformed-request errors are not automatically retried. Leave the model field blank for automatic discovery.
 
 ## Code boundaries
 
@@ -70,3 +70,5 @@ Before switching providers:
 3. Curate appropriately licensed educational data with subject, skill, Bloom level, difficulty, worked solution, distractor rationale and provenance. Split train/evaluation sets by source and problem family to prevent leakage.
 4. Fine-tune a selected open model on the same assessment schema and seed abstraction task. Benchmark source entailment, solution correctness, conceptual equivalence, distractor quality and teacher-rated cognitive depth against the Gemini baseline.
 5. Keep verification mandatory; consider an independently trained verifier and deterministic math checks. Retain failure withholding, clear provenance and regression evaluation when changing models.
+
+Model recovery patch: `gemini-client.js` owns provider requests and model discovery. No live API key was available for testing. Provider recovery tests use mocked HTTP responses. Reference: https://ai.google.dev/gemini-api/docs/troubleshooting
