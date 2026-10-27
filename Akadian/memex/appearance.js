@@ -23,13 +23,13 @@ window.MemexAppearance = (() => {
   if(!valid(choice.accent))choice.accent=defaults.accent;
   if(!valid(choice.background))choice.background=defaults.background;
   const mode=choice.mode==='system'?(system.matches?'dark':'light'):choice.mode;
-  const palettes={light:['#f6f3ec','#c26a12'],dark:['#16191f','#f0a04b'],night:['#100e0b','#cb925a'],custom:[choice.background,choice.accent]};
+  const palettes={light:['#f6f3ec','#c26a12'],dark:['#16181d','#f0a04a'],night:['#100e0b','#cb925a'],custom:[choice.background,choice.accent]};
   const [bg,accent]=palettes[mode],dark=luminance(bg)<.179;
-  const ink=dark?'#f5f0e6':'#211e17',opposite=dark?'#ffffff':'#000000';
+  const ink=dark?(mode==='dark'?'#f2f3f5':'#f5f0e6'):'#211e17',opposite=dark?'#ffffff':'#000000';
   // If a custom accent blends into the background, adjust its text/link variant.
   let link=accent;const ratio=(a,b)=>(Math.max(luminance(a),luminance(b))+.05)/(Math.min(luminance(a),luminance(b))+.05);
   for(let n=0;n<20&&ratio(link,bg)<4.5;n++)link=mix(link,dark?'#ffffff':'#000000',.15);
-  const vars={'bg':bg,'panel':mix(bg,opposite,.035),'surface':mix(bg,'#ffffff',dark?.065:.65),'ink':ink,'muted':mix(bg,ink,.68),'line':mix(bg,ink,.18),'accent':link,'accent-ink':luminance(link)>.35?'#101010':'#ffffff','accent-soft':mix(bg,link,.15),'good':dark?'#75ce9b':'#28663e','ok':dark?'#edb866':'#825d0b','risky':dark?'#f59b78':'#a44120','long':dark?'#f28f97':'#8a303b','shadow':dark?'0 8px 24px #0005':'0 8px 24px #39220712'};
+  const vars={'bg':bg,'panel':mix(bg,opposite,.035),'surface':mode==='dark'?'#1f2229':mix(bg,'#ffffff',dark?.065:.65),'ink':ink,'muted':mix(bg,ink,.68),'line':mix(bg,ink,.18),'accent':link,'accent-ink':luminance(link)>.35?'#101010':'#ffffff','accent-soft':mix(bg,link,.15),'good':dark?'#75ce9b':'#28663e','ok':dark?'#edb866':'#825d0b','risky':dark?'#f59b78':'#a44120','long':dark?'#f28f97':'#8a303b','shadow':dark?'0 8px 24px #0005':'0 8px 24px #39220712'};
   for(const [name,v] of Object.entries(vars))document.documentElement.style.setProperty('--'+name,v);
   document.documentElement.style.colorScheme=dark?'dark':'light';document.documentElement.dataset.theme=mode;
   document.querySelectorAll('meta[name="theme-color"]').forEach(m=>m.content=bg);

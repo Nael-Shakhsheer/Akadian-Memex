@@ -1,11 +1,13 @@
 // Memex service worker: caches the app shell so the app opens (and captures ideas) offline.
-const CACHE = 'memex-study-v3-math';
+const CACHE = 'memex-study-v4-akadian-brand';
 // Cache prefix left over from the release this app was renamed from; listed only so the stale
 // shell is evicted on upgrade. Remove once no client is still serving it.
 const RETIRED_CACHE_PREFIX = 'ember-';
 const SHELL = [
-  './', 'index.html', 'ideas.html', 'study.js', 'study-core.js', 'gemini-client.js', 'mathtext.js', 'study.css', 'styles.css', 'app.js', 'storage.js', 'appearance.js', 'manifest.webmanifest',
-  'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
+  './', 'index.html', 'ideas.html', 'study.js', 'study-core.js', 'gemini-client.js', 'mathtext.js', 'study.css', 'styles.css', 'brand.js', 'app.js', 'storage.js', 'appearance.js', 'manifest.webmanifest',
+  'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/icon.svg', 'icons/mark.svg',
+  // Cinzel (SIL OFL), bundled locally for the Akadian wordmark.
+  'vendor/fonts/cinzel-600-latin.woff2',
   // Vendored KaTeX. Fonts are fetched on demand by the fetch handler and cached from there,
   // so the offline shell stays small; the stylesheet and engine are precached.
   'vendor/katex/katex.min.css', 'vendor/katex/katex.min.js'

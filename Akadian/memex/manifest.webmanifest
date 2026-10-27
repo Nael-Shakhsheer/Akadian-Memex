@@ -1,13 +1,13 @@
 {
-  "name": "Memex \u2013 Learn with intention",
+  "name": "Akadian Memex \u2013 Learn with intention",
   "short_name": "Memex",
   "description": "Source-first study and custom practice tests, with an Ideas workspace.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f6f3ec",
-  "theme_color": "#f6f3ec",
+  "background_color": "#16181d",
+  "theme_color": "#16181d",
   "icons": [
     {
       "src": "icons/icon-192.png",
